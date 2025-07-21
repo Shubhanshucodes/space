@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Universe Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevents scrollbars from appearing */
+        }
+        #info-container {
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+        }
+        canvas {
+            display: block; /* Removes bottom margin */
+        }
+    </style>
+</head>
+<body class="bg-black text-white">
+
+    <!-- The container for the 3D scene -->
+    <div id="canvas-container" class="absolute top-0 left-0 w-full h-full z-0"></div>
+
+    <!-- The informational content overlaid on top -->
+    <div id="info-container" class="absolute top-0 left-0 w-full h-full p-8 md:p-12 flex flex-col justify-end items-start z-10 pointer-events-none">
+        <div class="max-w-xl">
+            <h1 class="text-4xl md:text-6xl font-bold text-white mb-4 animate-fade-in-down">Explore the Cosmos</h1>
+            <p class="text-lg md:text-xl text-gray-300 animate-fade-in-up">
+                Drag to rotate, scroll to zoom. This is a small, artist-rendered corner of space, featuring a central nebula, orbiting bodies, and a field of distant stars. Journey through the vast, beautiful emptiness.
+            </p>
+        </div>
+    </div>
+
+    <!-- Animation styles for the text -->
+    <style>
+        @keyframes fade-in-down {
+            0% { opacity: 0; transform: translateY(-20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-down { animation: fade-in-down 1s ease-out forwards; }
+        .animate-fade-in-up { animation: fade-in-up 1s ease-out 0.5s forwards; }
+    </style>
+
+    <!-- Three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script type="module">
+        // Import OrbitControls for camera interaction
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let starField, nebula, planets = [];
+
+        // Initialization function
+        function init() {
+            // --- Scene Setup ---
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.0008); // Adds a sense of depth
+
+            // --- Camera Setup ---
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 250;
+
+            // --- Renderer Setup ---
+            const canvasContainer = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            canvasContainer.appendChild(renderer.domElement);
+
+            // --- Controls ---
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // Smooths out the camera movement
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 50;
+            controls.maxDistance = 600;
+
+            // --- Lighting ---
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Soft ambient light
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 1.5, 1000); // Light from the center
+            pointLight.position.set(0, 0, 0);
+            scene.add(pointLight);
+
+            // --- Create Celestial Objects ---
+            createStarfield();
+            createNebula();
+            createPlanets();
+
+            // --- Event Listeners ---
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- Object Creation Functions ---
+
+        // Creates a vast field of stars using particles
+        function createStarfield() {
+            const starVertices = [];
+            for (let i = 0; i < 15000; i++) {
+                const x = THREE.MathUtils.randFloatSpread(2000);
+                const y = THREE.MathUtils.randFloatSpread(2000);
+                const z = THREE.MathUtils.randFloatSpread(2000);
+                starVertices.push(x, y, z);
+            }
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.7,
+                transparent: true,
+                opacity: 0.8
+            });
+            starField = new THREE.Points(geometry, material);
+            scene.add(starField);
+        }
+
+        // Creates the central swirling nebula
+        function createNebula() {
+            const geometry = new THREE.SphereGeometry(80, 64, 64);
+            // Using a simple material that reacts to light for the nebula core
+            const material = new THREE.MeshStandardMaterial({
+                emissive: 0xaa88ff, // Gives it a glow
+                emissiveIntensity: 0.5,
+                color: 0x553399,
+                roughness: 0.7,
+                metalness: 0.2,
+                fog: false // The nebula itself shouldn't be affected by fog
+            });
+            nebula = new THREE.Mesh(geometry, material);
+            
+            // Add a glowing halo effect using Sprites
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: new THREE.CanvasTexture(generateSprite()),
+                blending: THREE.AdditiveBlending,
+                color: 0xaa88ff,
+                transparent: true,
+                opacity: 0.5,
+                fog: false
+            });
+            const halo = new THREE.Sprite(spriteMaterial);
+            halo.scale.set(300, 300, 1.0);
+            nebula.add(halo); // Attach halo to the nebula
+            
+            scene.add(nebula);
+        }
+        
+        // Generates the texture for the halo sprite
+        function generateSprite() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+            const gradient = context.createRadialGradient(canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, canvas.width / 2);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.2, 'rgba(170,136,255,1)');
+            gradient.addColorStop(0.4, 'rgba(85,51,153,0.5)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            return canvas;
+        }
+
+        // Creates orbiting planets
+        function createPlanets() {
+            const planetData = [
+                { color: 0xff6347, size: 5, distance: 120, speed: 0.005 }, // Reddish planet
+                { color: 0x4682b4, size: 8, distance: 180, speed: 0.003 }, // Bluish planet
+                { color: 0xdeb887, size: 6, distance: 250, speed: 0.002, hasRing: true } // Planet with ring
+            ];
+
+            planetData.forEach((data, index) => {
+                const planetGroup = new THREE.Group(); // Group to hold planet and its ring
+                
+                const geometry = new THREE.SphereGeometry(data.size, 32, 32);
+                const material = new THREE.MeshStandardMaterial({ color: data.color, roughness: 0.8 });
+                const planet = new THREE.Mesh(geometry, material);
+                planetGroup.add(planet);
+
+                if (data.hasRing) {
+                    const ringGeometry = new THREE.RingGeometry(data.size * 1.5, data.size * 2, 64);
+                    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0x8B7D6B, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+                    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                    ring.rotation.x = Math.PI / 2; // Rotate the ring to be horizontal
+                    planetGroup.add(ring);
+                }
+                
+                // Set initial position
+                planetGroup.position.x = data.distance;
+                
+                // Store data for animation
+                planetGroup.userData = { distance: data.distance, speed: data.speed, angle: Math.random() * Math.PI * 2 };
+                
+                scene.add(planetGroup);
+                planets.push(planetGroup);
+            });
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.0001;
+
+            // Rotate the starfield
+            if (starField) {
+                starField.rotation.x += 0.0001;
+                starField.rotation.y += 0.0001;
+            }
+            
+            // Rotate the nebula
+            if (nebula) {
+                nebula.rotation.y += 0.0005;
+            }
+
+            // Animate planets orbiting the center
+            planets.forEach(planetGroup => {
+                planetGroup.userData.angle += planetGroup.userData.speed;
+                const distance = planetGroup.userData.distance;
+                planetGroup.position.x = Math.cos(planetGroup.userData.angle) * distance;
+                planetGroup.position.z = Math.sin(planetGroup.userData.angle) * distance;
+                
+                // Make the planet itself rotate
+                planetGroup.children[0].rotation.y += 0.01; 
+            });
+
+            controls.update(); // Required if enableDamping is true
+            renderer.render(scene, camera);
+        }
+
+        // --- Handle Window Resizing ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Start the application ---
+        init();
+        animate();
+
+    </script>
+</body>
+</html>
